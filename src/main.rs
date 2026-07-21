@@ -19,7 +19,7 @@ impl SyslogParser {
         Self {
             // Matches "Jun 20 10:40:18"
             date_re: Regex::new(r"^[A-Z][a-z]{2}\s+\d{1,2}\s\d{2}:\d{2}:\d{2}").unwrap(),
-            // Matches " fedora systemd[20201]:"
+            // Matches " hostname systemd[20201]:"
             host_proc_re: Regex::new(r"^\s+([^\s]+)\s+([^:]+):").unwrap(),
         }
     }

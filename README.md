@@ -32,31 +32,11 @@ cargo install --path .
 ```
 
 ### Arch Linux (PKGBUILD)
-To build and package natively for an Arch-based system, utilize a `PKGBUILD` structure:
 
 ```bash
-# Maintainer: Kenny Glowner <youremail@domain.com>
-pkgname=ccze-rs
-pkgver=0.1.0
-pkgrel=1
-pkgdesc="Memory-safe drop-in Rust replacement for the ccze log colorizer"
-arch=('x86_64')
-license=('MIT')
-depends=('glibc')
-makedepends=('rust' 'cargo')
-source=("git+[https://github.com/your-repo/ccze-rs.git](https://github.com/your-repo/ccze-rs.git)")
-sha256sums=('SKIP')
-
-build() {
-    cd "$pkgname"
-    cargo build --release --locked
-}
-
-package() {
-    cd "$pkgname"
-    install -Dm755 target/release/ccze-rs "$pkgdir/usr/bin/ccze-rs"
-    ln -sf /usr/bin/ccze-rs "$pkgdir/usr/bin/ccze"
-}
+git clone https://github.com/SisyphusAeolides/arch-pkgbuilds.git
+cd arch-pkgbuilds/ccze-rs
+makepkg -si
 ```
 
 ## Usage
