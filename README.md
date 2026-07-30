@@ -1,81 +1,115 @@
 # ccze-rs
 
-A memory-safe, hyper-fast, drop-in Rust replacement for the legacy `ccze` log colorizer.
+`ccze-rs` is a fast streaming log colorizer with optional anomaly detection and
+protocol-order verification. It installs the `ccze` executable and is designed
+for pipelines, live journal output, and large log files.
 
-Logs are untrusted, highly variable inputs. Parsing them in legacy C-based colorizers poses inherent risks of memory corruption and buffer overflows. `ccze-rs` provides complete memory safety guarantees while delivering matching or superior throughput through aggressive zero-copy tokenization.
+The parser works on borrowed byte slices, reuses its input and output buffers,
+and preserves non-UTF-8 input. Async standard I/O keeps the Rust layer responsive
+while native components handle analytics and verified reductions.
 
-## Features
+## Highlights
 
-* **Drop-in CLI Compatibility:** Matches standard `ccze` arguments, flags, and terminal handling behaviors seamlessly.
-* **Memory Safe:** Engineered completely in safe Rust, eliminating entire classes of security vulnerabilities during untrusted log streaming.
-* **Zero-Copy Parsing:** Leverages specialized tokenizers that operate directly on string slices (`&str`) and byte streams to minimize allocation overhead.
-* **Pluggable Architecture:** Features an explicit, highly extensible trait-based architecture for writing custom log-format plugins (e.g., Syslog, Apache, Journald, Nginx).
-* **FHS & Pipeline Friendly:** Respects standard input/output streams, maintaining exact ANSI color escape code handling for continuous terminal paging.
+- Automatic, syslog, Apache/Nginx access-log, and JSON parsers
+- Terminal-aware color output plus classic `ccze -A` raw ANSI behavior
+- Rolling anomaly detection implemented in Fortran through `iso_c_binding`
+- Lifecycle validation for `Start -> Authenticate -> Bind -> Ready`
+- Total Idris 2 protocol specification and Agda severity-algebra proofs
+- Portable analytics fallback when GFortran is not installed
+- Rust 1.75 minimum supported version
 
-## Performance
+## Install
 
-By minimizing context switches and heap allocations, `ccze-rs` achieves elite processing speeds, easily saturating high-bandwidth stdout pipelines without CPU bottlenecks.
+From crates.io:
 
-| Metric | Legacy `ccze` (C) | `ccze-rs` (Rust) |
-| :--- | :--- | :--- |
-| **Throughput** | ~110 MB/s | **~340 MB/s** |
-| **Memory Allocation** | Dynamic Heap | **Zero-Copy Stack/Slice** |
-| **Safety Profile** | Vulnerable to Out-of-Bounds | **Memory Guaranteed Safe** |
-
-## Installation
-
-### From Source
-Ensure you have the stable Rust toolchain installed:
-
-```bash
-cargo install --path .
+```console
+cargo install ccze-rs
 ```
 
-### Arch Linux (PKGBUILD)
+GFortran is optional for crates.io installs. When it is available, the build
+uses the vector-friendly Fortran analytics engine; otherwise it compiles the
+equivalent portable C implementation.
 
-```bash
-git clone https://github.com/SisyphusAeolides/arch-pkgbuilds.git
-cd arch-pkgbuilds/ccze-rs
-makepkg -si
+On Fedora, EPEL, or RHEL:
+
+```console
+sudo dnf copr enable sisyphuscode/ccze-rs
+sudo dnf install ccze-rs
 ```
 
-## Usage
+The COPR package always builds with GFortran.
 
-`ccze-rs` functions identically to standard log coloring tools in your shell pipeline.
+## Use
 
-### Basic Stream Colorization
-```bash
-tail -f /var/log/syslog | ccze-rs
+Color a stream when stdout is a terminal:
+
+```console
+journalctl -f | ccze
 ```
 
-### Raw Terminal Output (Bypass ncurses layout)
-```bash
-journalctl -u dbus -n 50 | ccze-rs -A
+Force ANSI sequences in a pipeline:
+
+```console
+tail -f /var/log/messages | ccze -A | less -R
 ```
 
-### Colorizing a Static File
-```bash
-ccze-rs < /var/log/nginx/access.log
+Analyze a stream with a 128-line window:
+
+```console
+ccze --analytics --analytics-window 128 < application.log
 ```
+
+Verify a service lifecycle:
+
+```console
+ccze --verify-protocol < service.log
+```
+
+Select or list parsers:
+
+```console
+ccze --plugin syslog < /var/log/messages
+ccze --list-plugins
+```
+
+Inspect the native implementation selected at build time:
+
+```console
+ccze --backend-info
+```
+
+Run `ccze --help` for all options.
 
 ## Architecture
 
-The project splits tokenization from terminal rendering using an internal pipeline optimized for multi-threaded usage or single-threaded high-velocity loops.
-
 ```text
-[ Raw Log Stream ] ---> [ Tokenizer Pool (Regex/SIMD Matcher) ] ---> [ ANSI Escape Colorizer ] ---> [ Hardware Stdout ]
+stdin -> Rust async I/O -> zero-copy token ranges -> ANSI renderer -> stdout
+                          |                      |
+                          |                      +-> Agda-specified severity join
+                          +-> Fortran analytics +-> Idris-specified protocol step
 ```
 
-### Implementing a Custom Tokenizer
-Custom tokenizers implement the `LogPlugin` trait to scan and inject color primitives into arbitrary stream tokens:
+Rust owns all I/O, buffers, CLI behavior, and parsing. Fortran receives compact
+arrays of line lengths and error flags through the C ABI, then computes rolling
+z-scores and binary entropy. Idris defines the only valid service-state
+transitions. Agda proves that severity reduction is commutative and idempotent.
 
-```rust
-pub trait LogPlugin {
-    fn name(&self) -> &'static str;
-    fn try_parse<'a>(&self, line: &'a str) -> Option<Vec<Token<'a>>>;
-}
+Idris 2's RefC backend and Agda's MAlonzo backend do not expose portable,
+stable C library symbols directly. The repository therefore keeps their total,
+type-checked sources as the authoritative specifications and ships small C ABI
+counterparts whose complete input domains are exercised by Rust tests. See
+[`ARCHITECTURE.md`](ARCHITECTURE.md) for the boundary details.
+
+## Build and verify
+
+```console
+make check
+make test
 ```
+
+`make proofs` requires Idris 2 and Agda. `make srpm` creates a source RPM with
+all Cargo dependencies vendored for an offline RPM build.
 
 ## License
 
-This project is licensed under the MIT License.
+MIT

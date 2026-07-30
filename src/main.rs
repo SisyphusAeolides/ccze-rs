@@ -1,95 +1,132 @@
-use clap::Parser;
-use crossterm::style::{Color, Stylize};
-use std::io::{self, BufRead};
-use regex::Regex;
+use ccze_rs::analytics::AnalyticsWindow;
+use ccze_rs::protocol::ProtocolVerifier;
+use ccze_rs::severity::Severity;
+use ccze_rs::{Processor, PLUGINS};
+use clap::{Parser, ValueEnum};
+use std::io::{self, IsTerminal};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-// 1. The Core Architecture Trait
-pub trait LogParser {
-    fn parse(&self, line: &str) -> String;
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ColorChoice {
+    Auto,
+    Always,
+    Never,
 }
 
-// 2. The Syslog Plugin
-struct SyslogParser {
-    date_re: Regex,
-    host_proc_re: Regex,
+/// A fast streaming log colorizer and verification pipeline.
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Parser)]
+#[command(name = "ccze", version, about)]
+struct Cli {
+    /// Force raw ANSI output, matching classic ccze's -A option.
+    #[arg(short = 'A', long = "raw-ansi")]
+    raw_ansi: bool,
+
+    /// Choose when ANSI colors are emitted.
+    #[arg(long, value_enum, default_value_t = ColorChoice::Auto)]
+    color: ColorChoice,
+
+    /// Select a parser.
+    #[arg(short, long, default_value = "auto")]
+    plugin: String,
+
+    /// List available parser plugins and exit.
+    #[arg(short, long)]
+    list_plugins: bool,
+
+    /// Enable rolling anomaly detection.
+    #[arg(long)]
+    analytics: bool,
+
+    /// Number of samples in the analytics window.
+    #[arg(long, default_value_t = 64)]
+    analytics_window: usize,
+
+    /// Z-score threshold used to identify anomalous line lengths.
+    #[arg(long, default_value_t = 3.5)]
+    anomaly_threshold: f64,
+
+    /// Verify Start -> Authenticate -> Bind -> Ready event ordering.
+    #[arg(long)]
+    verify_protocol: bool,
+
+    /// Print native backend information and exit.
+    #[arg(long)]
+    backend_info: bool,
 }
 
-impl SyslogParser {
-    fn new() -> Self {
-        Self {
-            // Matches "Jun 20 10:40:18"
-            date_re: Regex::new(r"^[A-Z][a-z]{2}\s+\d{1,2}\s\d{2}:\d{2}:\d{2}").unwrap(),
-            // Matches " hostname systemd[20201]:"
-            host_proc_re: Regex::new(r"^\s+([^\s]+)\s+([^:]+):").unwrap(),
+#[tokio::main]
+async fn main() {
+    match run().await {
+        Err(error) if error.kind() != io::ErrorKind::BrokenPipe => {
+            eprintln!("ccze: {error}");
+            std::process::exit(1);
         }
+        _ => {}
     }
 }
 
-impl LogParser for SyslogParser {
-    fn parse(&self, line: &str) -> String {
-        // First, extract the date
-        if let Some(date_mat) = self.date_re.find(line) {
-            let date_str = &line[date_mat.start()..date_mat.end()];
-            let rest = &line[date_mat.end()..];
+async fn run() -> io::Result<()> {
+    let cli = Cli::parse();
+    if cli.list_plugins {
+        println!("{}", PLUGINS.join("\n"));
+        return Ok(());
+    }
+    if cli.backend_info {
+        println!("analytics={}", AnalyticsWindow::backend());
+        println!("protocol=idris2-specified-c-abi");
+        println!("severity=agda-specified-c-abi");
+        return Ok(());
+    }
 
-            // Next, extract the hostname and process name
-            if let Some(proc_mat) = self.host_proc_re.find(rest) {
-                let host_proc_str = &rest[proc_mat.start()..proc_mat.end()];
-                let message = &rest[proc_mat.end()..];
+    let color = cli.raw_ansi
+        || matches!(cli.color, ColorChoice::Always)
+        || matches!(cli.color, ColorChoice::Auto) && io::stdout().is_terminal();
+    let mut processor = Processor::new(&cli.plugin)
+        .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
+    let mut analytics = cli
+        .analytics
+        .then(|| AnalyticsWindow::new(cli.analytics_window, cli.anomaly_threshold));
+    let mut verifier = cli.verify_protocol.then(ProtocolVerifier::default);
 
-                // Reconstruct the line with ANSI color formatting
-                return format!(
-                    "{}{}{}",
-                    date_str.with(Color::DarkYellow),
-                    host_proc_str.with(Color::DarkCyan),
-                    message
+    let mut input = BufReader::new(tokio::io::stdin());
+    let mut stdout = tokio::io::stdout();
+    let mut line = Vec::with_capacity(4096);
+    let mut rendered = Vec::with_capacity(4096);
+
+    loop {
+        line.clear();
+        let bytes_read = input.read_until(b'\n', &mut line).await?;
+        if bytes_read == 0 {
+            break;
+        }
+        let had_newline = line.last() == Some(&b'\n');
+        let payload = line.strip_suffix(b"\n").unwrap_or(&line);
+        let payload = payload.strip_suffix(b"\r").unwrap_or(payload);
+        let severity = processor.process(payload, color, &mut rendered);
+
+        if let Some(window) = analytics.as_mut() {
+            let analysis = window.push(payload.len(), severity >= Severity::Error);
+            if analysis.anomaly {
+                rendered.extend_from_slice(
+                    format!(
+                        " [anomaly z={:.2} entropy={:.2}]",
+                        analysis.zscore, analysis.error_entropy
+                    )
+                    .as_bytes(),
                 );
             }
-            // Fallback if process regex fails but date matches
-            return format!("{}{}", date_str.with(Color::DarkYellow), rest);
         }
-        // Fallback for completely unrecognized lines
-        line.to_string()
+        if let Some(Err(violation)) = verifier
+            .as_mut()
+            .and_then(|verifier| verifier.inspect(payload))
+        {
+            rendered.extend_from_slice(format!(" [protocol violation: {violation}]").as_bytes());
+        }
+        if had_newline {
+            rendered.push(b'\n');
+        }
+        stdout.write_all(&rendered).await?;
     }
-}
-
-// 3. The Default Fallback Plugin (No-op)
-struct DefaultParser;
-impl LogParser for DefaultParser {
-    fn parse(&self, line: &str) -> String {
-        line.to_string()
-    }
-}
-
-/// A robust, memory-safe log colorizer (Oxidized)
-#[derive(Parser, Debug)]
-#[command(name = "ccze", version = "0.3.0", about, long_about = None)]
-struct Cli {
-    /// Load a specific plugin (e.g., syslog, httpd, exim)
-    #[arg(short, long)]
-    plugin: Option<String>,
-
-    /// Output destination (kept for legacy compatibility)
-    #[arg(short, long)]
-    output: Option<String>,
-}
-
-fn main() -> io::Result<()> {
-    let cli = Cli::parse();
-    
-    // Dynamic Plugin Routing using Boxed Traits
-    let parser: Box<dyn LogParser> = match cli.plugin.as_deref() {
-        Some("syslog") => Box::new(SyslogParser::new()),
-        _ => Box::new(DefaultParser),
-    };
-
-    let stdin = io::stdin();
-    
-    for line in stdin.lock().lines() {
-        let line = line?;
-        // Pass the line through the chosen parser
-        println!("{}", parser.parse(&line));
-    }
-    
-    Ok(())
+    stdout.flush().await
 }

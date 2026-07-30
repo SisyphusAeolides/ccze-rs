@@ -1,0 +1,48 @@
+.TH CCZE 1 "July 2026" "ccze-rs 0.4.0" "User Commands"
+.SH NAME
+ccze \- colorize, analyze, and verify streaming logs
+.SH SYNOPSIS
+.B ccze
+.RI [ OPTIONS ]
+.SH DESCRIPTION
+.B ccze
+reads log records from standard input and writes them to standard output.
+It recognizes syslog, web access, and JSON records without changing their
+payload bytes.
+.SH OPTIONS
+.TP
+.BR \-A ", " \-\-raw-ansi
+Always emit ANSI color sequences.
+.TP
+.BR \-p ", " \-\-plugin " " NAME
+Select auto, syslog, httpd, or json parsing.
+.TP
+.BR \-l ", " \-\-list-plugins
+List available parsers and exit.
+.TP
+.B \-\-color auto|always|never
+Control ANSI output. The default is auto.
+.TP
+.B \-\-analytics
+Enable rolling line-length and error-frequency anomaly detection.
+.TP
+.BI \-\-analytics-window " COUNT"
+Set the rolling analytics window size.
+.TP
+.BI \-\-anomaly-threshold " SCORE"
+Set the anomaly z-score threshold.
+.TP
+.B \-\-verify-protocol
+Validate Start, Authenticate, Bind, and Ready event ordering.
+.TP
+.B \-\-backend-info
+Print compiled native backend information and exit.
+.SH EXAMPLES
+.PP
+journalctl -f | ccze
+.PP
+tail -f /var/log/messages | ccze -A | less -R
+.PP
+ccze --analytics --verify-protocol < service.log
+.SH AUTHORS
+Kenny Glowner
