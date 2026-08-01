@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := build
 
 name := ccze-rs
-version := 0.5.0
+version := 0.5.1
 builddir := $(shell mktemp -d)
 
 .PHONY: build check test proofs proofs-strict install tarball vendor srpm clean-dist
