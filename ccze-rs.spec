@@ -1,5 +1,5 @@
 Name:           ccze-rs
-Version:        0.4.0
+Version:        0.5.0
 Release:        1%{?dist}
 Summary:        Streaming log colorizer with native analytics
 
@@ -41,6 +41,10 @@ CCZE_FORCE_FORTRAN=1 CARGO_NET_OFFLINE=true cargo test --frozen --all-targets
 %{_mandir}/man1/ccze.1*
 
 %changelog
+* Sat Aug 01 2026 Kenny Glowner <SisyphusAeolides@pm.me> - 0.5.0-1
+- Add versioned metric-vector encoding and decoding
+- Add opt-in Linux integration library APIs
+
 * Thu Jul 30 2026 Kenny Glowner <SisyphusAeolides@pm.me> - 0.4.0-1
 - Add streaming parsers, native analytics, and protocol verification
 - Add Idris and Agda formal specifications

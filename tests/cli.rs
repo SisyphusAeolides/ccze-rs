@@ -1,5 +1,6 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
+use tempfile::tempdir;
 
 fn run(args: &[&str], input: &[u8]) -> std::process::Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_ccze"))
@@ -42,4 +43,37 @@ fn reports_protocol_violations() {
     assert!(String::from_utf8(output.stdout)
         .unwrap()
         .contains("protocol violation"));
+}
+
+#[test]
+fn vector_cli_writes_versioned_records_and_decodes_summaries() {
+    let directory = tempdir().unwrap();
+    let vector_path = directory.path().join("service.cczev");
+    let encoded = run(
+        &["--vector-encode", "--output", vector_path.to_str().unwrap()],
+        b"service[42]: started\nservice pid=77: ready\n",
+    );
+    assert!(encoded.status.success());
+    assert!(encoded.stdout.is_empty());
+    assert_eq!(std::fs::metadata(&vector_path).unwrap().len(), 8 + 2 * 64);
+
+    let decoded = run(
+        &[
+            "--vector-decode",
+            "--vector-input",
+            vector_path.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert!(decoded.status.success());
+    let summaries = String::from_utf8(decoded.stdout).unwrap();
+    assert_eq!(summaries.lines().count(), 2);
+    assert!(summaries.contains("[PID:42]"));
+    assert!(summaries.contains("[PID:77]"));
+}
+
+#[test]
+fn vector_modes_are_mutually_exclusive() {
+    let output = run(&["--vector-encode", "--vector-decode"], b"");
+    assert!(!output.status.success());
 }

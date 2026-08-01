@@ -1,9 +1,11 @@
-use ccze_rs::analytics::AnalyticsWindow;
-use ccze_rs::protocol::ProtocolVerifier;
+use ccze_rs::analytics::{Analysis, AnalyticsWindow};
+use ccze_rs::protocol::{Phase, ProtocolVerifier};
 use ccze_rs::severity::Severity;
+use ccze_rs::vector::{VectorEncoder, VectorReader, VectorWriter};
 use ccze_rs::{Processor, PLUGINS};
 use clap::{Parser, ValueEnum};
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Write};
+use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -53,6 +55,22 @@ struct Cli {
     /// Print native backend information and exit.
     #[arg(long)]
     backend_info: bool,
+
+    /// Encode logs to state vectors (compressed binary format).
+    #[arg(long, conflicts_with = "vector_decode", requires = "output")]
+    vector_encode: bool,
+
+    /// Render state vectors as human-readable metric summaries.
+    #[arg(long, conflicts_with = "vector_encode", requires = "vector_input")]
+    vector_decode: bool,
+
+    /// Path to the vector file created by --vector-encode.
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Path to input vector file for decoding.
+    #[arg(long)]
+    vector_input: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -76,7 +94,15 @@ async fn run() -> io::Result<()> {
         println!("analytics={}", AnalyticsWindow::backend());
         println!("protocol=idris2-specified-c-abi");
         println!("severity=agda-specified-c-abi");
+        println!("vector={}", VectorEncoder::backend());
         return Ok(());
+    }
+
+    if cli.vector_decode {
+        let input_path = cli.vector_input.as_ref().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "missing vector input path")
+        })?;
+        return decode_vectors(input_path);
     }
 
     let color = cli.raw_ansi
@@ -88,6 +114,19 @@ async fn run() -> io::Result<()> {
         .analytics
         .then(|| AnalyticsWindow::new(cli.analytics_window, cli.anomaly_threshold));
     let mut verifier = cli.verify_protocol.then(ProtocolVerifier::default);
+
+    if cli.vector_encode {
+        let output_path = cli.output.as_ref().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "missing vector output path")
+        })?;
+        return encode_vectors(
+            output_path,
+            &mut processor,
+            analytics.as_mut(),
+            verifier.as_mut(),
+        )
+        .await;
+    }
 
     let mut input = BufReader::new(tokio::io::stdin());
     let mut stdout = tokio::io::stdout();
@@ -129,4 +168,111 @@ async fn run() -> io::Result<()> {
         stdout.write_all(&rendered).await?;
     }
     stdout.flush().await
+}
+
+fn decode_vectors(input_path: &std::path::Path) -> io::Result<()> {
+    let mut reader = VectorReader::open(input_path)
+        .map_err(|error| io::Error::other(format!("failed to open vector file: {error}")))?;
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+    while let Some(vector) = reader.read()? {
+        let severity = if vector.severity < 0.1 {
+            Severity::Trace
+        } else if vector.severity < 0.3 {
+            Severity::Debug
+        } else if vector.severity < 0.5 {
+            Severity::Info
+        } else if vector.severity < 0.7 {
+            Severity::Warn
+        } else if vector.severity < 0.9 {
+            Severity::Error
+        } else {
+            Severity::Fatal
+        };
+        writeln!(
+            handle,
+            "[PID:{:.0}] [L:{:.0}] [F:{:.1}/s] [T:{:.1}s] [Z:{:.2}] [E:{:.2}] [P:{:.0}] {}",
+            vector.process_id * 4_194_304.0,
+            vector.length * 1024.0,
+            vector.frequency * 1000.0,
+            vector.timestamp * 60.0,
+            vector.zscore * 10.0,
+            vector.entropy,
+            vector.protocol * 4.0,
+            severity,
+        )?;
+    }
+    Ok(())
+}
+
+async fn encode_vectors(
+    output_path: &std::path::Path,
+    processor: &mut Processor,
+    mut analytics: Option<&mut AnalyticsWindow>,
+    mut verifier: Option<&mut ProtocolVerifier>,
+) -> io::Result<()> {
+    let mut writer = VectorWriter::create(output_path)
+        .map_err(|error| io::Error::other(format!("failed to create vector file: {error}")))?;
+    let mut encoder = VectorEncoder::new();
+    let mut input = BufReader::new(tokio::io::stdin());
+    let mut line = Vec::with_capacity(4096);
+    let mut scratch = Vec::with_capacity(4096);
+
+    loop {
+        line.clear();
+        if input.read_until(b'\n', &mut line).await? == 0 {
+            break;
+        }
+        let payload = line.strip_suffix(b"\n").unwrap_or(&line);
+        let payload = payload.strip_suffix(b"\r").unwrap_or(payload);
+        let severity = processor.process(payload, false, &mut scratch);
+        let analysis = analytics.as_mut().map_or_else(Analysis::default, |window| {
+            window.push(payload.len(), severity >= Severity::Error)
+        });
+        let protocol_phase = verifier
+            .as_mut()
+            .and_then(|state| state.inspect(payload))
+            .and_then(Result::ok)
+            .unwrap_or(Phase::Cold);
+        let (vector, _) = encoder.encode(
+            payload.len(),
+            severity,
+            &analysis,
+            protocol_phase,
+            extract_pid(payload),
+        );
+        writer.write(vector)?;
+    }
+    writer.flush()
+}
+
+/// Extracts the common `[1234]` or `pid=1234` forms without requiring UTF-8.
+fn extract_pid(line: &[u8]) -> u32 {
+    if let Some(start) = line.iter().position(|byte| *byte == b'[') {
+        if let Some(end) = line[start + 1..].iter().position(|byte| *byte == b']') {
+            if let Some(pid) = parse_decimal(&line[start + 1..start + 1 + end]) {
+                return pid;
+            }
+        }
+    }
+    if let Some(position) = line.windows(4).position(|window| window == b"pid=") {
+        let digits = &line[position + 4..];
+        let length = digits
+            .iter()
+            .position(|byte| !byte.is_ascii_digit())
+            .unwrap_or(digits.len());
+        if let Some(pid) = parse_decimal(&digits[..length]) {
+            return pid;
+        }
+    }
+    0
+}
+
+fn parse_decimal(digits: &[u8]) -> Option<u32> {
+    if digits.is_empty() || digits.iter().any(|byte| !byte.is_ascii_digit()) {
+        return None;
+    }
+    digits.iter().try_fold(0_u32, |value, byte| {
+        value.checked_mul(10)?.checked_add(u32::from(*byte - b'0'))
+    })
 }

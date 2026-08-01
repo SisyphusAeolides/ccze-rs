@@ -1,9 +1,32 @@
 //! Streaming log parsing, colorization, analytics, and protocol verification.
 
 pub mod analytics;
+#[cfg(feature = "system-integration")]
+pub mod cgroup;
+#[cfg(feature = "system-integration")]
+pub mod config;
+#[cfg(feature = "system-integration")]
+pub mod dkms;
+#[cfg(feature = "system-integration")]
+pub mod gossip;
+#[cfg(feature = "system-integration")]
+pub mod lsm;
 pub mod parser;
 pub mod protocol;
+#[cfg(feature = "system-integration")]
+pub mod rollback;
+#[cfg(feature = "system-integration")]
+pub mod scheduler;
+#[cfg(feature = "system-integration")]
+pub mod seccomp;
 pub mod severity;
+#[cfg(feature = "system-integration")]
+pub mod timing;
+pub mod vector;
+#[cfg(feature = "system-integration")]
+pub mod xdp;
+#[cfg(feature = "system-integration")]
+pub mod zram;
 
 use parser::{LogParser, Token, TokenKind};
 

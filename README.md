@@ -1,8 +1,9 @@
 # ccze-rs
 
-`ccze-rs` is a fast streaming log colorizer with optional anomaly detection and
-protocol-order verification. It installs the `ccze` executable and is designed
-for pipelines, live journal output, and large log files.
+`ccze-rs` is a fast streaming log colorizer with optional anomaly detection,
+protocol-order verification, and fixed-width metric-vector export. It installs
+the `ccze` executable and is designed for pipelines, live journal output, and
+large log files.
 
 The parser works on borrowed byte slices, reuses its input and output buffers,
 and preserves non-UTF-8 input. Async standard I/O keeps the Rust layer responsive
@@ -16,6 +17,8 @@ while native components handle analytics and verified reductions.
 - Lifecycle validation for `Start -> Authenticate -> Bind -> Ready`
 - Total Idris 2 protocol specification and Agda severity-algebra proofs
 - Portable analytics fallback when GFortran is not installed
+- Versioned 64-byte metric-vector records with strict corruption detection
+- Optional Linux system-integration library APIs behind a Cargo feature
 - Rust 1.75 minimum supported version
 
 ## Install
@@ -65,6 +68,19 @@ Verify a service lifecycle:
 ccze --verify-protocol < service.log
 ```
 
+Encode one lossy metric vector per input record, then inspect those metrics:
+
+```console
+ccze --analytics --verify-protocol --vector-encode -o service.cczev < service.log
+ccze --vector-decode --vector-input service.cczev
+```
+
+Vector files contain normalized metrics, not the original log payload. Decode
+mode prints summaries such as length, severity, rate, entropy, z-score, process
+identifier, and protocol phase; it cannot reconstruct discarded text. Files
+carry a versioned header, and malformed headers, partial records, non-finite
+values, and out-of-range features are rejected.
+
 Select or list parsers:
 
 ```console
@@ -87,18 +103,42 @@ stdin -> Rust async I/O -> zero-copy token ranges -> ANSI renderer -> stdout
                           |                      |
                           |                      +-> Agda-specified severity join
                           +-> Fortran analytics +-> Idris-specified protocol step
+                          |
+                          +-> Fortran state-vector encoder -> versioned file
 ```
 
 Rust owns all I/O, buffers, CLI behavior, and parsing. Fortran receives compact
 arrays of line lengths and error flags through the C ABI, then computes rolling
 z-scores and binary entropy. Idris defines the only valid service-state
 transitions. Agda proves that severity reduction is commutative and idempotent.
+The vector encoder uses the same build-selected Fortran or portable C policy as
+analytics. Rust owns the on-disk little-endian format and validates every record
+before exposing it.
 
 Idris 2's RefC backend and Agda's MAlonzo backend do not expose portable,
 stable C library symbols directly. The repository therefore keeps their total,
 type-checked sources as the authoritative specifications and ships small C ABI
 counterparts whose complete input domains are exercised by Rust tests. See
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for the boundary details.
+
+### Optional system integration
+
+The `system-integration` Cargo feature exposes Linux-oriented library modules
+for cgroup observation, configuration repair, DKMS/module inspection, gossip,
+LSM policy, rollback coordination, scheduling experiments, seccomp policy,
+timing analysis, XDP state, and zram management:
+
+```console
+cargo build --features system-integration
+```
+
+These APIs are not activated by the `ccze` command and do not perform privileged
+changes merely by compiling the crate. Applications must opt in, construct the
+relevant manager, and provide the operating-system privileges required by each
+operation. The LSM manager evaluates policy and observes active kernel state;
+kernel enforcement requires a separately maintained, kernel-compatible module.
+These modules are experimental Linux integration APIs, not portable
+log-colorizer behavior.
 
 ## Build and verify
 
