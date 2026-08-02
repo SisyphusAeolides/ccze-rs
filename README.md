@@ -23,6 +23,16 @@ while native components handle analytics and verified reductions.
 
 ## Install
 
+From the Sisyphus Arch repository:
+
+```console
+sudo pacman -Syy
+sudo pacman -S ccze-rs
+```
+
+The package installs the `ccze` command. It includes the native analytics
+backend and does not require a separate compiler at runtime.
+
 From crates.io:
 
 ```console
@@ -33,14 +43,12 @@ GFortran is optional for crates.io installs. When it is available, the build
 uses the vector-friendly Fortran analytics engine; otherwise it compiles the
 equivalent portable C implementation.
 
-On Fedora, EPEL, or RHEL:
+To build locally on Arch or an Arch-based distribution:
 
 ```console
-sudo dnf copr enable sisyphuscode/ccze-rs
-sudo dnf install ccze-rs
+sudo pacman -S --needed base-devel rust cargo gcc-fortran
+makepkg -si
 ```
-
-The COPR package always builds with GFortran.
 
 ## Use
 
@@ -147,8 +155,8 @@ make check
 make test
 ```
 
-`make proofs` requires Idris 2 and Agda. `make srpm` creates a source RPM with
-all Cargo dependencies vendored for an offline RPM build.
+`make proofs` requires Idris 2 and Agda. On Arch, install them with
+`sudo pacman -S --needed agda idris2` when formal verification is required.
 
 ## License
 
