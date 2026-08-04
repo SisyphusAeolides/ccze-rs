@@ -23,6 +23,13 @@ while native components handle analytics and verified reductions.
 
 ## Install
 
+On DNF/RPM based systems:
+
+```bash
+sudo dnf copr enable sisyphuscode/ccze-rs
+sudo dnf install ccze-rs
+```
+
 From the Sisyphus Arch repository:
 
 ```console
