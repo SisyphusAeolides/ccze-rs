@@ -6,7 +6,9 @@ use ccze_rs::{Processor, PLUGINS};
 use clap::{Parser, ValueEnum};
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+const MAXIMUM_RECORD_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ColorChoice {
@@ -135,10 +137,11 @@ async fn run() -> io::Result<()> {
 
     loop {
         line.clear();
-        let bytes_read = input.read_until(b'\n', &mut line).await?;
+        let bytes_read = read_record(&mut input, &mut line).await?;
         if bytes_read == 0 {
             break;
         }
+
         let had_newline = line.last() == Some(&b'\n');
         let payload = line.strip_suffix(b"\n").unwrap_or(&line);
         let payload = payload.strip_suffix(b"\r").unwrap_or(payload);
@@ -220,7 +223,7 @@ async fn encode_vectors(
 
     loop {
         line.clear();
-        if input.read_until(b'\n', &mut line).await? == 0 {
+        if read_record(&mut input, &mut line).await? == 0 {
             break;
         }
         let payload = line.strip_suffix(b"\n").unwrap_or(&line);
@@ -275,4 +278,54 @@ fn parse_decimal(digits: &[u8]) -> Option<u32> {
     digits.iter().try_fold(0_u32, |value, byte| {
         value.checked_mul(10)?.checked_add(u32::from(*byte - b'0'))
     })
+}
+
+async fn read_record(
+    input: &mut (impl AsyncBufRead + Unpin),
+    line: &mut Vec<u8>,
+) -> io::Result<usize> {
+    line.clear();
+    loop {
+        let (length, complete) = {
+            let available = input.fill_buf().await?;
+            if available.is_empty() {
+                return Ok(line.len());
+            }
+            let length = available
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or(available.len(), |index| index + 1);
+            if line.len().saturating_add(length) > MAXIMUM_RECORD_BYTES {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("input record exceeds {MAXIMUM_RECORD_BYTES} bytes"),
+                ));
+            }
+            line.extend_from_slice(&available[..length]);
+            (length, available[length - 1] == b'\n')
+        };
+        input.consume(length);
+        if complete {
+            return Ok(line.len());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{read_record, MAXIMUM_RECORD_BYTES};
+    use std::io;
+    use tokio::io::BufReader;
+
+    #[tokio::test]
+    async fn read_record_rejects_unterminated_oversized_input() {
+        let input = vec![b'x'; MAXIMUM_RECORD_BYTES + 1];
+        let mut input = BufReader::new(io::Cursor::new(input));
+        let mut line = Vec::new();
+
+        let error = read_record(&mut input, &mut line).await.unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(line.len() <= MAXIMUM_RECORD_BYTES);
+    }
 }
