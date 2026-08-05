@@ -1,5 +1,5 @@
 Name:           ccze-rs
-Version:        0.5.1
+Version:        0.5.2
 Release:        1%{?dist}
 Summary:        Streaming log colorizer with native analytics
 
@@ -41,6 +41,9 @@ CCZE_FORCE_FORTRAN=1 CARGO_NET_OFFLINE=true cargo test --frozen --all-targets
 %{_mandir}/man1/ccze.1*
 
 %changelog
+* Wed Aug 05 2026 Kenny Glowner <SisyphusAeolides@pm.me> - 0.5.2-1
+- Bound streamed log records to prevent unbounded memory growth
+
 * Sat Aug 01 2026 Kenny Glowner <SisyphusAeolides@pm.me> - 0.5.1-1
 - Pin the test dependency graph to the declared Rust 1.75 baseline
 
