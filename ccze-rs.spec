@@ -1,7 +1,10 @@
 Name:           ccze-rs
-Version:        0.5.2
+Version:        0.5.3
 Release:        1%{?dist}
 Summary:        Streaming log colorizer with native analytics
+
+Provides:       ccze = %{version}-%{release}
+Obsoletes:      ccze < %{version}-%{release}
 
 License:        MIT
 URL:            https://github.com/SisyphusAeolides/ccze-rs
@@ -33,6 +36,7 @@ install -D -m 0644 packaging/ccze.1 %{buildroot}%{_mandir}/man1/ccze.1
 
 %check
 CCZE_FORCE_FORTRAN=1 CARGO_NET_OFFLINE=true cargo test --frozen --all-targets
+make packaging-check
 
 %files
 %license LICENSE
@@ -41,6 +45,11 @@ CCZE_FORCE_FORTRAN=1 CARGO_NET_OFFLINE=true cargo test --frozen --all-targets
 %{_mandir}/man1/ccze.1*
 
 %changelog
+* Sat Aug 08 2026 Kenny Glowner <SisyphusAeolides@pm.me> - 0.5.3-1
+- Add offline-buildable Ubuntu source packaging
+- Declare the classic ccze package replacement relationship
+- Preserve strict lint compatibility for the public library API
+
 * Wed Aug 05 2026 Kenny Glowner <SisyphusAeolides@pm.me> - 0.5.2-1
 - Bound streamed log records to prevent unbounded memory growth
 

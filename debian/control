@@ -1,0 +1,31 @@
+Source: ccze-rs
+Section: utils
+Priority: optional
+Maintainer: Kenny Glowner <SisyphusAeolides@pm.me>
+Build-Depends:
+ debhelper-compat (= 13),
+ cargo (>= 1.75),
+ rustc (>= 1.75),
+ gcc,
+ gfortran
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+Homepage: https://github.com/SisyphusAeolides/ccze-rs
+Vcs-Git: https://github.com/SisyphusAeolides/ccze-rs.git
+Vcs-Browser: https://github.com/SisyphusAeolides/ccze-rs
+
+Package: ccze-rs
+Architecture: any
+Depends:
+ ${misc:Depends},
+ ${shlibs:Depends}
+Provides: ccze (= ${binary:Version})
+Conflicts: ccze
+Replaces: ccze
+Description: streaming log colorizer with native analytics
+ ccze-rs is a pipeline-friendly log colorizer with parsers for syslog,
+ web-server access logs, and JSON. It includes rolling anomaly detection,
+ protocol-order verification, and fixed-width metric-vector export.
+ .
+ The package installs the standard ccze command path and includes its native
+ analytics backend without requiring a compiler at runtime.

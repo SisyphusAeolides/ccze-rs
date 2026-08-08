@@ -442,7 +442,7 @@ pub struct DangerousSyscalls;
 
 impl DangerousSyscalls {
     /// System calls that should be blocked in most states.
-    pub const DANGEROUS: &[i32] = &[
+    pub const DANGEROUS: &'static [i32] = &[
         59,  // execve
         160, // sysctl
         174, // ioperm

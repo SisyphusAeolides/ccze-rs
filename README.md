@@ -23,6 +23,27 @@ while native components handle analytics and verified reductions.
 
 ## Install
 
+On Ubuntu, install the published package from the Corinth PPA:
+
+```console
+sudo add-apt-repository ppa:sisyphusaeolides/corinth
+sudo apt update
+sudo apt install ccze-rs
+```
+
+The package owns the standard `ccze` executable path, so it replaces Ubuntu's
+`ccze` package during installation. It supports the common `ccze -A`, parser
+selection, and plugin-listing workflows, but it does not load classic ccze
+shared-object plugins or its configuration-file format.
+
+To create a signed, offline-buildable source upload for Launchpad:
+
+```console
+make ppa-source
+dput ppa:sisyphusaeolides/corinth \
+  ../ccze-rs_0.5.3-1~ppa1~ubuntu26.04.1_source.changes
+```
+
 On DNF/RPM based systems:
 
 ```bash

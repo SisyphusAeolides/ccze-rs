@@ -1,6 +1,6 @@
 [package]
 name = "ccze-rs"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2021"
 rust-version = "1.75"
 authors = ["Kenny Glowner <SisyphusAeolides@pm.me>"]
@@ -49,3 +49,4 @@ unsafe_op_in_unsafe_fn = "deny"
 [lints.clippy]
 all = "warn"
 pedantic = "warn"
+module_name_repetitions = "allow"

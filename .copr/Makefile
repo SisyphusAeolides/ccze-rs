@@ -3,7 +3,7 @@
 .PHONY: srpm
 
 name := ccze-rs
-version := 0.5.2
+version := 0.5.3
 builddir := $(shell mktemp -d)
 
 srpm:
