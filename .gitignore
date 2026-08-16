@@ -1,0 +1,7 @@
+/target/
+/*.tar.gz
+/vendor.tar.xz
+*.agdai
+*.mod
+*.ttc
+*.ttm
